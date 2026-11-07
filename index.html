@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Shark Snack</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a4a7a; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: crosshair; }
+  #hud {
+    position: fixed; top: 12px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between;
+    font: 700 28px/1 "Trebuchet MS", system-ui, sans-serif;
+    color: #fff; text-shadow: 0 2px 4px #0006;
+    pointer-events: none;
+  }
+  #level { margin-top: 8px; font-size: 20px; }
+  #babies { margin-top: 8px; font-size: 20px; text-align: right; }
+  #bar { margin-top: 6px; width: 170px; height: 12px; border-radius: 6px; background: #ffffff44; overflow: hidden; }
+  #barFill { height: 100%; width: 0; background: #ffd23f; transition: width 0.2s; }
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 16px; text-align: center;
+    font-family: "Trebuchet MS", system-ui, sans-serif; color: #fff;
+    background: #06304f88;
+  }
+  #screen { text-shadow: 0 3px 6px #0007; cursor: pointer; }
+  #screen h1 { margin: 0; font-size: clamp(44px, 11vw, 96px); }
+  #screen p { margin: 0; font-size: clamp(18px, 3.5vw, 28px); }
+  #screen .go {
+    margin-top: 10px; padding: 14px 34px; border-radius: 999px;
+    background: #ff8a3d; font-size: clamp(22px, 4vw, 32px); font-weight: 700;
+    text-shadow: none;
+  }
+  #quiz { justify-content: safe center; overflow-y: auto; }
+  #card {
+    width: min(560px, 100%); box-sizing: border-box;
+    padding: 24px 20px; border-radius: 28px;
+    background: #fffdf5; color: #123e5c;
+    box-shadow: 0 10px 30px #0005;
+  }
+  #cardTop { font-size: 22px; font-weight: 700; color: #e4572e; }
+  #question { margin: 12px 0; font-size: clamp(25px, 5.5vw, 36px); font-weight: 700; line-height: 1.25; }
+  #question .things { font-size: clamp(26px, 6vw, 36px); line-height: 1.3; margin-bottom: 10px; letter-spacing: 4px; }
+  #hint { min-height: 28px; font-size: 22px; color: #e4572e; }
+  #answers { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 8px; }
+  #answers button, #hear {
+    border: 0; border-radius: 18px; cursor: pointer; font-family: inherit; font-weight: 700;
+  }
+  #answers button {
+    flex: 1 1 130px; min-height: 76px; padding: 10px;
+    background: #2bb6e8; color: #fff; font-size: 30px;
+  }
+  #answers.many { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  #answers.many button { min-width: 0; min-height: 56px; padding: 6px 4px; font-size: clamp(17px, 3.6vw, 22px); }
+  @media (max-width: 380px) { #answers.many { grid-template-columns: repeat(2, 1fr); } }
+  #answers button:disabled { background: #cfd8dc; cursor: default; }
+  #hear { margin-top: 14px; padding: 8px 16px; background: #e7f4fb; color: #123e5c; font-size: 18px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div>
+    <div id="score">Score 0</div>
+    <div id="level"></div>
+    <div id="bar"><div id="barFill"></div></div>
+  </div>
+  <div>
+    <div id="hearts"></div>
+    <div id="babies"></div>
+  </div>
+</div>
+
+<div id="screen" class="overlay">
+  <h1 id="title">Shark Snack</h1>
+  <p id="info">Help the friendly shark catch fish. Dodge the wobbly jellyfish!<br>Golden fish are worth 5 points.<br>Catch a 🎁 for a bonus question and win a prize!<br>Reach level 20 and right answers bring baby sharks!</p>
+  <div class="go" id="go">Play</div>
+</div>
+
+<div id="quiz" class="overlay hidden">
+  <div id="card">
+    <div id="cardTop"></div>
+    <div id="question"></div>
+    <div id="hint"></div>
+    <div id="answers"></div>
+    <button id="hear">🔊 Hear it again</button>
+  </div>
+</div>
+
+<script src="voice.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+const screenEl = $('screen');
+const quizEl = $('quiz');
+
+// ---- Tweak these to change how the game feels ----
+const SHARK_SPEED = 360;      // pixels per second at level 1
+const SHARK_START_SIZE = 50;  // size at level 1
+const SPEED_PER_LEVEL = 45;   // extra speed each level
+const SIZE_PER_LEVEL = 10;    // extra size each level
+const FISH_PER_LEVEL = 8;     // fish to catch for the next level
+const LEVELS = [
+  'Little Shark', 'Speedy Shark', 'Super Shark', 'Turbo Shark', 'Mega Shark',
+  'Ocean Champion', 'Reef Ranger', 'Wave Rider', 'Deep Diver', 'Storm Swimmer',
+  'Tide Master', 'Sea Star', 'Thunder Fin', 'Golden Fin', 'Rocket Fin',
+  'Giant Fin', 'Sea Legend', 'Ocean Hero', 'Shark Captain', 'Shark Parent',
+];
+const BABIES_FROM_LEVEL = 20; // baby sharks start at this level
+const MAX_JELLIES = 14;        // on a big screen; fewer on small ones
+const JELLY_SPEED_PER_LEVEL = 0.1;  // 10% faster each level
+const MAX_SIZE_OF_SCREEN = 0.2; // keeps the big shark from filling small screens
+const START_HEARTS = 3;
+const MAX_BABIES = 8;         // size of the full army
+const BABY_START_SIZE = 20;
+const BABY_GROWTH = 7;        // babies grow this much with each rainbow power
+const BABY_MAX_SIZE = 48;
+const BABY_SPEED = 0.8;       // compared with the big shark
+const BABY_HUNT_RANGE = 240;  // babies chase fish this close to the big shark
+const FISH_COUNT = 9;
+const FISH_COLOURS = ['#ff9f1c', '#fb5607', '#ff5d8f', '#8ac926', '#c77dff'];
+const GOLD = '#ffe45e';
+const FIRST_GIFT_AT = 10;     // score needed for the first bonus question
+const GIFT_EVERY = 15;        // score between bonus questions
+const RAINBOW_SECONDS = 8;
+const WRONG_BEFORE_HELP = 2;   // wrong guesses on one question before it is explained
+const CHALLENGE_EVERY = 3;    // every third question is a challenge
+const SOUND_VOLUME = 4;       // loudness of the sound effects
+
+// Prizes the shark wears, won one at a time. x, y are spots on the shark.
+const PRIZES = [
+  { name: 'a pink bow',     emoji: '🎀', x: -14, y: -42, size: 30 },
+  { name: 'cool sunglasses', emoji: '🕶️', x: 36,  y: -7,  size: 30 },
+  { name: 'a top hat',      emoji: '🎩', x: 16,  y: -38, size: 36 },
+  { name: 'a red balloon',  emoji: '🎈', x: -82, y: -52, size: 40 },
+  { name: 'a golden crown', emoji: '👑', x: 16,  y: -40, size: 36, replaces: '🎩' },
+];
+
+// Add more questions here! Put the right answer first; they get shuffled.
+const QUESTIONS = [
+  { q: '<div class="things">🐟</div>How do you spell this word?', say: 'How do you spell fish?', answers: ['fish', 'fsh', 'fihs'], why: 'Fish is spelled f, i, s, h.' },
+  { q: '<div class="things">🐱</div>How do you spell this word?', say: 'How do you spell cat?', answers: ['cat', 'ct', 'cta'], why: 'Cat is spelled c, a, t.' },
+  { q: '<div class="things">🐶</div>How do you spell this word?', say: 'How do you spell dog?', answers: ['dog', 'dg', 'dgo'], why: 'Dog is spelled d, o, g.' },
+  { q: '<div class="things">☀️</div>How do you spell this word?', say: 'How do you spell sun?', answers: ['sun', 'sn', 'snu'], why: 'Sun is spelled s, u, n.' },
+  { q: '<div class="things">🚢</div>How do you spell this word?', say: 'How do you spell ship?', answers: ['ship', 'shp', 'sihp'], why: 'Ship is spelled s, h, i, p.' },
+  { q: 'Which word rhymes with "shark"?', answers: ['park', 'ship', 'fish'], why: 'Park rhymes with shark. They sound the same at the end.' },
+  { q: 'Which word rhymes with "wave"?', answers: ['cave', 'wind', 'sand'], why: 'Cave rhymes with wave. They sound the same at the end.' },
+  { q: 'What is the opposite of "deep"?', answers: ['shallow', 'wet', 'blue'], why: 'Shallow is the opposite of deep.' },
+  { q: 'What is the opposite of "heavy"?', answers: ['light', 'big', 'slow'], why: 'Light is the opposite of heavy.' },
+  { q: 'How many days are there in a week?', answers: ['7', '5', '10'], why: 'There are 7 days in a week, from Monday to Sunday.' },
+  { q: 'How many months are there in a year?', answers: ['12', '10', '7'], why: 'There are 12 months in a year, from January to December.' },
+  { q: 'Which day comes after Wednesday?', answers: ['Thursday', 'Tuesday', 'Saturday'], why: 'Thursday comes after Wednesday.' },
+  { q: 'Which month comes after March?', answers: ['April', 'February', 'June'], why: 'April comes after March.' },
+  { q: 'How many sides does a triangle have?', answers: ['3', '4', '5'], why: 'A triangle has 3 sides.' },
+  { q: 'How many sides does a hexagon have?', answers: ['6', '5', '8'], why: 'A hexagon has 6 sides.' },
+  { q: 'Which number is the biggest?', answers: ['52', '25', '49'], why: '52 is the biggest, because it has 5 tens.' },
+  { q: 'Count in fives: 5, 10, 15. What number comes next?', answers: ['20', '16', '25'], why: 'When you count in fives, 20 comes after 15.' },
+  { q: 'Count in tens: 10, 20, 30. What number comes next?', answers: ['40', '31', '50'], why: 'When you count in tens, 40 comes after 30.' },
+  { q: 'Count in twos: 14, 16, 18. What number comes next?', answers: ['20', '19', '22'], why: 'When you count in twos, 20 comes after 18.' },
+  { q: 'What do fish use to breathe under water?', answers: ['Gills', 'Lungs', 'Fins'], why: 'Fish use gills to breathe under water.' },
+  { q: 'Which planet do we live on?', answers: ['Earth', 'Mars', 'Jupiter'], why: 'We live on planet Earth.' },
+];
+
+// Harder questions with six answers. Right answer first again.
+const CHALLENGES = [
+  { q: 'How many minutes are there in one hour?', answers: ['60', '30', '100', '24', '12', '50'], why: 'There are 60 minutes in one hour.' },
+  { q: 'How many legs do 3 dogs have altogether?', answers: ['12', '7', '9', '10', '6', '15'], why: 'Each dog has 4 legs. 4 plus 4 plus 4 is 12.' },
+  { q: 'What number is 10 more than 47?', answers: ['57', '48', '37', '67', '58', '46'], why: '10 more than 47 is 57. The tens go up by 1.' },
+  { q: 'What is half of 30?', answers: ['15', '10', '20', '5', '25', '13'], why: 'Half of 30 is 15, because 15 plus 15 makes 30.' },
+  { q: 'Count in threes: 3, 6, 9, 12. What number comes next?', answers: ['15', '13', '14', '16', '18', '21'], why: 'Add 3 each time. 12 plus 3 is 15.' },
+  { q: 'Count back in twos: 20, 18, 16. What number comes next?', answers: ['14', '15', '12', '13', '10', '17'], why: 'Take away 2 each time. 16 take away 2 is 14.' },
+  { q: 'How many sides do 2 squares have altogether?', answers: ['8', '4', '6', '10', '12', '2'], why: 'A square has 4 sides. 4 plus 4 is 8.' },
+  { q: 'How many days are there in a year?', answers: ['365', '100', '52', '12', '300', '360'], why: 'There are 365 days in a year.' },
+  { q: 'Which month comes before July?', answers: ['June', 'May', 'August', 'March', 'April', 'September'], why: 'June comes before July.' },
+  { q: 'Which shape has 5 sides?', answers: ['Pentagon', 'Triangle', 'Square', 'Hexagon', 'Octagon', 'Circle'], why: 'A pentagon has 5 sides.' },
+  { q: 'Which of these animals is a mammal?', answers: ['Dolphin', 'Shark', 'Crab', 'Jellyfish', 'Goldfish', 'Turtle'], why: 'A dolphin is a mammal. It breathes air and feeds its babies milk.' },
+  { q: 'What is the biggest animal in the world?', answers: ['Blue whale', 'Elephant', 'Giraffe', 'Great white shark', 'Hippo', 'Polar bear'], why: 'The blue whale is the biggest animal in the world.' },
+  { q: 'Which is the biggest ocean?', answers: ['Pacific', 'Atlantic', 'Indian', 'Arctic', 'Southern', 'North Sea'], why: 'The Pacific is the biggest ocean.' },
+];
+
+let W = 0, H = 0;
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = list => list[Math.floor(Math.random() * list.length)];
+const int = (a, b) => a + Math.floor(Math.random() * (b - a + 1));   // whole number, a to b
+const shuffled = list =>list.map(v => [Math.random(), v]).sort((a, b) => a[0] - b[0]).map(p => p[1]);
+
+// ---- Game state ----
+let playing = false;
+let started = false;    // a game has begun, so draw the sharks
+let quizOpen = false;
+let canRestartAt = 0;
+let time = 0;
+let score = 0;
+let hearts = START_HEARTS;
+let nextGiftAt = FIRST_GIFT_AT;
+let level = 1;
+let levelFish = 0;      // fish caught towards the next level
+let levelBanner = 0;    // seconds left on the big message
+let bannerTitle = '';
+let bannerWords = '';
+let babies = [];
+let best = 0;
+try { best = Number(localStorage.getItem('sharkBest')) || 0; } catch (e) {}
+
+const shark = { x: 0, y: 0, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0 };
+const wearing = [];   // prizes stay on for the whole visit, even after game over
+let fish = [];
+let jellies = [];
+let popups = [];
+let trail = [];
+const bubbles = Array.from({ length: 30 }, () => ({
+  x: rand(0, W), y: rand(0, H), r: rand(2, 7), speed: rand(20, 60),
+}));
+const seaweed = Array.from({ length: 16 }, () => ({ x: rand(0, 1), h: rand(50, 130) }));
+
+// ---- Input ----
+const keys = {};
+let pointer = null;
+
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.startsWith('Arrow')) { pointer = null; e.preventDefault(); }
+  if ((e.key === ' ' || e.key === 'Enter') && !playing) start();
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function aim(e) { pointer = { x: e.clientX, y: e.clientY }; }
+canvas.addEventListener('pointermove', aim);
+canvas.addEventListener('pointerdown', aim);
+screenEl.addEventListener('pointerdown', e => { aim(e); start(); });
+
+// ---- Spawning ----
+function spawnFish() {
+  const fromLeft = Math.random() < 0.5;
+  const giftDue = score >= nextGiftAt && !fish.some(s => s.gift);
+  const golden = !giftDue && Math.random() < 0.1;
+  fish.push({
+    x: fromLeft ? -40 : W + 40,
+    y: rand(60, H - 100),
+    dir: fromLeft ? 1 : -1,
+    speed: giftDue ? 80 : rand(70, 170) * (golden ? 1.6 : 1),
+    r: giftDue ? 34 : golden ? 17 : rand(12, 22),
+    colour: golden ? GOLD : pick(FISH_COLOURS),
+    points: golden ? 5 : 1,
+    gift: giftDue,
+    bob: rand(0, 6),
+  });
+}
+
+function spawnJelly() {
+  const fromBottom = Math.random() < 0.5;
+  jellies.push({
+    x: rand(40, W - 40),
+    y: fromBottom ? H + 50 : -50,
+    dir: fromBottom ? -1 : 1,
+    speed: rand(50, 100) * (1 + (level - 1) * JELLY_SPEED_PER_LEVEL),
+    r: rand(24, 34),
+    wiggle: rand(0, 6),
+  });
+}
+
+function jelliesWanted() {
+  const fits = Math.max(5, Math.min(MAX_JELLIES, Math.floor(W * H / 70000)));
+  return Math.min(fits, 2 + Math.floor(score / 12));   // gets harder as you score
+}
+
+// ---- Sound and speech ----
+let audio = null;
+let master = null;
+let spokenOnce = false;
+
+// Browsers only allow sound after a tap, click or key press, so try on every one.
+function unlockSound() {
+  try {
+    if (!audio) {
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      const limiter = audio.createDynamicsCompressor();   // stops overlapping sounds distorting
+      master = audio.createGain();
+      master.gain.value = SOUND_VOLUME;
+      master.connect(limiter).connect(audio.destination);
+      // A silent blip wakes up sound on iPhones and iPads
+      const blip = audio.createBufferSource();
+      blip.buffer = audio.createBuffer(1, 1, 22050);
+      blip.connect(audio.destination);
+      blip.start();
+    }
+    if (audio.state !== 'running') audio.resume();
+    if (!spokenOnce) {
+      spokenOnce = true;
+      speechSynthesis.speak(new SpeechSynthesisUtterance(''));   // same idea, for the voice
+    }
+  } catch (e) {}
+}
+['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(name =>
+  window.addEventListener(name, unlockSound, true));
+
+function beep(freq, endFreq, dur, type, vol) {
+  if (!audio) return;
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, audio.currentTime);
+  o.frequency.exponentialRampToValueAtTime(endFreq, audio.currentTime + dur);
+  g.gain.setValueAtTime(vol, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
+  o.connect(g).connect(master);
+  o.start();
+  o.stop(audio.currentTime + dur);
+}
+
+function canSpeak() {
+  try { return speechSynthesis.getVoices().length > 0; } catch (e) { return false; }
+}
+canSpeak();   // asks the browser to load its voices early
+
+function hasClip(text) {
+  return Boolean(window.VOICE && window.VOICE[text]);
+}
+
+// Spoken lines are recordings from voice.js, so they work in any browser.
+// A line with no recording falls back to the browser's own voice.
+let voicePlaying = null;
+let voiceTurn = 0;
+const decodedClips = {};
+
+function stopVoice() {
+  voiceTurn++;
+  try { if (voicePlaying) voicePlaying.stop(); } catch (e) {}
+  voicePlaying = null;
+}
+
+async function say(text) {
+  stopVoice();
+  const turn = voiceTurn;
+  if (!audio || !hasClip(text)) return sayWithBrowser(text);
+  try {
+    if (!decodedClips[text]) {
+      const bytes = Uint8Array.from(atob(window.VOICE[text]), c => c.charCodeAt(0));
+      decodedClips[text] = await audio.decodeAudioData(bytes.buffer);
+    }
+    if (turn !== voiceTurn) return;   // something newer is being said
+    const source = audio.createBufferSource();
+    source.buffer = decodedClips[text];
+    source.connect(audio.destination);
+    source.start();
+    voicePlaying = source;
+  } catch (e) {
+    sayWithBrowser(text);
+  }
+}
+
+function sayWithBrowser(text) {
+  try {
+    speechSynthesis.cancel();
+    // Chrome can drop speech that starts straight after a cancel
+    setTimeout(() => speechSynthesis.speak(new SpeechSynthesisUtterance(text)), 60);
+  } catch (e) {}
+}
+
+// ---- Bonus questions ----
+let questionBag = [];
+let challengeBag = [];
+let quizCount = 0;      // questions so far this game
+let spoken = '';
+
+function numberChoices(right, count = 3) {
+  const spread = count > 3 ? 5 : 3;
+  const choices = new Set([right]);
+  while (choices.size < count) {
+    const n = right + int(-spread, spread);
+    if (n >= 0) choices.add(n);
+  }
+  return [...choices].map(String);
+}
+
+const addWhy = (a, b) => `${a} plus ${b} is ${a + b}. Start at ${a} and count on ${b}.`;
+const takeWhy = (a, b) => `${a} take away ${b} is ${a - b}. Start at ${a} and count back ${b}.`;
+
+function makeQuestion() {
+  const kind = pick(['add', 'take', 'missing', 'double', 'half', 'story', 'count', 'other', 'other', 'other']);
+  if (kind === 'add') {
+    const a = int(3, 12), b = int(2, 8);
+    return { q: `What is ${a} + ${b}?`, say: `What is ${a} plus ${b}?`, answers: numberChoices(a + b), why: addWhy(a, b) };
+  }
+  if (kind === 'take') {
+    const a = int(8, 20), b = int(2, 8);
+    return { q: `What is ${a} − ${b}?`, say: `What is ${a} take away ${b}?`, answers: numberChoices(a - b), why: takeWhy(a, b) };
+  }
+  if (kind === 'missing') {
+    const a = int(2, 9), b = int(2, 9);
+    return {
+      q: `${a} + ▢ = ${a + b}<br>What number goes in the box?`,
+      say: `${a} plus what number makes ${a + b}?`,
+      answers: numberChoices(b),
+      why: `The answer is ${b}, because ${a} plus ${b} makes ${a + b}.`,
+    };
+  }
+  if (kind === 'double') {
+    const a = int(3, 10);
+    return { q: `What is double ${a}?`, answers: numberChoices(a * 2), why: `Double ${a} means ${a} plus ${a}, which is ${a * 2}.` };
+  }
+  if (kind === 'half') {
+    const a = int(2, 10);
+    return { q: `What is half of ${a * 2}?`, answers: numberChoices(a), why: `Half of ${a * 2} is ${a}, because ${a} plus ${a} makes ${a * 2}.` };
+  }
+  if (kind === 'story') {
+    const a = int(6, 12), b = int(3, 5);
+    return pick([
+      { q: `A shark sees ${a} fish. Then ${b} more fish swim up. How many fish are there now?`, answers: numberChoices(a + b), why: `${a} plus ${b} is ${a + b}, so there are ${a + b} fish.` },
+      { q: `There are ${a} fish. Then ${b} fish swim away. How many fish are left?`, answers: numberChoices(a - b), why: `${a} take away ${b} is ${a - b}, so ${a - b} fish are left.` },
+    ]);
+  }
+  if (kind === 'count') {
+    const n = int(7, 18);
+    const [emoji, name] = pick([['🐟', 'fish'], ['🦀', 'crabs'], ['🐢', 'turtles'], ['🐙', 'octopuses']]);
+    const rows = emoji.repeat(n).match(/.{1,5}/gu).join('<br>');   // rows of 5 are easier to count
+    return {
+      q: `<div class="things">${rows}</div>How many ${name} are there?`,
+      say: `How many ${name} are there? Count them carefully.`,
+      answers: numberChoices(n),
+      why: `There are ${n}. Count in fives along the rows, then add the rest.`,
+    };
+  }
+  if (!questionBag.length) questionBag = shuffled(QUESTIONS);
+  return questionBag.pop();
+}
+
+function makeChallenge() {
+  const kind = pick(['times', 'add', 'take', 'three', 'groups', 'other', 'other']);
+  if (kind === 'times') {
+    const a = pick([2, 5, 10]), b = int(2, 10);
+    return { q: `What is ${a} × ${b}?`, say: `What is ${a} times ${b}?`, answers: numberChoices(a * b, 6), why: `${a} times ${b} is ${a * b}. That is ${b} lots of ${a}.` };
+  }
+  if (kind === 'add') {
+    const a = int(13, 25), b = int(6, 9);
+    return { q: `What is ${a} + ${b}?`, say: `What is ${a} plus ${b}?`, answers: numberChoices(a + b, 6), why: addWhy(a, b) };
+  }
+  if (kind === 'take') {
+    const a = int(21, 30), b = int(6, 9);
+    return { q: `What is ${a} − ${b}?`, say: `What is ${a} take away ${b}?`, answers: numberChoices(a - b, 6), why: takeWhy(a, b) };
+  }
+  if (kind === 'three') {
+    const a = int(2, 5), b = int(2, 5), c = int(2, 5);
+    return { q: `What is ${a} + ${b} + ${c}?`, say: `What is ${a} plus ${b} plus ${c}?`, answers: numberChoices(a + b + c, 6), why: `${a} plus ${b} is ${a + b}, and ${c} more makes ${a + b + c}.` };
+  }
+  if (kind === 'groups') {
+    const boxes = int(2, 5), each = pick([2, 5, 10]);
+    return { q: `There are ${boxes} nets with ${each} fish in each net. How many fish are there altogether?`, answers: numberChoices(boxes * each, 6), why: `${boxes} nets of ${each} is ${boxes * each}. Count in ${each}s.` };
+  }
+  if (!challengeBag.length) challengeBag = shuffled(CHALLENGES);
+  return challengeBag.pop();
+}
+
+function openQuiz() {
+  quizOpen = true;
+  nextGiftAt = score + GIFT_EVERY;
+  quizCount++;
+  const challenge = quizCount % CHALLENGE_EVERY === 0;
+  const q = challenge ? makeChallenge() : makeQuestion();
+  const right = q.answers[0];
+  spoken = q.say || q.q;
+  let wrongGuesses = 0;
+
+  $('cardTop').textContent = challenge ? '⭐ Challenge question!' : '🎁 Bonus question!';
+  $('question').innerHTML = q.q;
+  $('hint').textContent = '';
+  $('hear').classList.remove('hidden');
+  const box = $('answers');
+  box.innerHTML = '';
+  box.classList.toggle('many', q.answers.length > 3);
+  for (const answer of shuffled(q.answers)) {
+    const b = document.createElement('button');
+    b.textContent = answer;
+    b.onclick = () => {
+      if (answer === right) return showPrize();
+      // A wrong answer costs a heart, then you can try another one
+      b.disabled = true;
+      hearts--;
+      updateHud();
+      beep(380, 280, 0.25, 'triangle', 0.1);
+      wrongGuesses++;
+      if (hearts <= 0 || wrongGuesses >= WRONG_BEFORE_HELP) return explainAnswer(q, right);
+      $('hint').textContent = 'Nearly! You lost a heart. Try again.';
+      say('Nearly! Try again.');
+    };
+    box.appendChild(b);
+  }
+  quizEl.classList.remove('hidden');
+  beep(500, 900, 0.3, 'triangle', 0.1);
+  say(spoken);
+}
+
+// After lots of wrong guesses, show the answer and why. No prize, but no more hearts lost.
+function explainAnswer(q, right) {
+  spoken = q.why;
+  $('cardTop').textContent = `The answer is ${right}`;
+  $('hint').textContent = q.why;
+  const box = $('answers');
+  box.innerHTML = '';
+  box.classList.remove('many');
+  const b = document.createElement('button');
+  b.textContent = hearts > 0 || babies.length ? 'Keep swimming!' : 'See my score';
+  b.onclick = () => {
+    stopVoice();
+    quizEl.classList.add('hidden');
+    quizOpen = false;
+    pointer = null;
+    if (hearts <= 0) sharkLost();
+  };
+  box.appendChild(b);
+  say(q.why);
+}
+
+function showPrize() {
+  const prize = PRIZES.find(p => !wearing.includes(p));
+  let won = 'rainbow power';
+  if (prize) {
+    const replaced = wearing.findIndex(p => p.emoji === prize.replaces);
+    if (replaced >= 0) wearing.splice(replaced, 1);
+    wearing.push(prize);
+    won = `${prize.name} and rainbow power`;
+  }
+  hearts = Math.min(START_HEARTS, hearts + 1);
+  updateHud();
+
+  $('cardTop').textContent = 'Well done!';
+  $('question').textContent = (prize ? prize.emoji : '') + '🌈';
+  $('hint').textContent = `You won ${won}!`;
+  $('hear').classList.add('hidden');
+  const box = $('answers');
+  box.innerHTML = '';
+  box.classList.remove('many');
+  const b = document.createElement('button');
+  b.textContent = 'Keep swimming!';
+  b.onclick = () => {
+    quizEl.classList.add('hidden');
+    quizOpen = false;
+    shark.rainbow = RAINBOW_SECONDS;
+    growArmy();
+    pointer = null;   // don't dart off towards the button
+  };
+  box.appendChild(b);
+  [523, 659, 784].forEach((f, i) => setTimeout(() => beep(f, f, 0.2, 'triangle', 0.12), i * 120));
+  say(`Well done! You won ${won}!`);
+}
+
+$('hear').onclick = () => say(spoken);
+
+// ---- Game flow ----
+function start() {
+  if (playing || performance.now() < canRestartAt) return;
+  score = 0;
+  hearts = START_HEARTS;
+  nextGiftAt = FIRST_GIFT_AT;
+  level = 1;
+  levelFish = 0;
+  levelBanner = 0;
+  quizCount = 0;
+  babies = [];
+  fish = [];
+  jellies = [];
+  popups = [];
+  trail = [];
+  Object.assign(shark, { x: W / 2, y: H / 2, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0 });
+  for (let i = 0; i < FISH_COUNT; i++) {
+    spawnFish();
+    fish[i].x = rand(0, W);
+  }
+  updateHud();
+  screenEl.classList.add('hidden');
+  playing = true;
+  started = true;
+}
+
+// Every rainbow power makes the babies bigger and brings a new one
+function growArmy() {
+  if (level < BABIES_FROM_LEVEL) return;
+  for (const b of babies) b.target = Math.min(BABY_MAX_SIZE, b.target + BABY_GROWTH);
+  if (babies.length < MAX_BABIES) {
+    babies.push({
+      x: shark.x, y: shark.y, angle: shark.angle, size: BABY_START_SIZE / 2,
+      target: BABY_START_SIZE, chomp: 0, phase: rand(0, 6),
+    });
+    showBanner('New baby shark!', 'Your army is growing!');
+    say('A new baby shark has joined you!');
+  } else {
+    showBanner('Your babies grew!', 'The army is getting stronger!');
+    say('Your baby sharks grew bigger!');
+  }
+  updateHud();
+  if (babies.length === MAX_BABIES && babies.every(b => b.target >= BABY_MAX_SIZE)) winGame();
+}
+
+// Out of hearts: the biggest baby takes over. No babies left means game over.
+function sharkLost() {
+  if (!babies.length) { gameOver(); return; }
+  const next = babies.reduce((a, b) => (b.size > a.size ? b : a));
+  babies = babies.filter(b => b !== next);
+  Object.assign(shark, { x: next.x, y: next.y, angle: next.angle, size: next.size, chomp: 0, hurt: 2 });
+  hearts = START_HEARTS;
+  updateHud();
+  showBanner('Baby to the rescue!', 'Your biggest baby takes over!');
+  [392, 523, 659].forEach((f, i) => setTimeout(() => beep(f, f, 0.18, 'triangle', 0.12), i * 100));
+  say('Baby to the rescue! Your biggest baby takes over!');
+}
+
+function updateBabies(dt) {
+  const speed = (SHARK_SPEED + levelBoost() * SPEED_PER_LEVEL) * BABY_SPEED;
+  babies.forEach((b, i) => {
+    b.size += (b.target - b.size) * Math.min(1, dt * 3);
+    b.chomp = Math.max(0, b.chomp - dt * 4);
+
+    // Chase the closest fish near the big shark, otherwise swim in a circle around it
+    let goal = null, closest = Infinity;
+    for (const f of fish) {
+      if (f.gift || f.eaten || Math.hypot(f.x - shark.x, f.y - shark.y) > BABY_HUNT_RANGE) continue;
+      const d = Math.hypot(f.x - b.x, f.y - b.y);
+      if (d < closest) { closest = d; goal = f; }
+    }
+    if (!goal) {
+      const spot = i / babies.length * Math.PI * 2 + time * 0.6;
+      const ring = shark.size * 1.3 + 30;
+      goal = { x: shark.x + Math.cos(spot) * ring, y: shark.y + Math.sin(spot) * ring };
+    }
+
+    const tx = goal.x - b.x, ty = goal.y - b.y, dist = Math.hypot(tx, ty);
+    if (dist > 6) {
+      const step = Math.min(speed * dt, dist);
+      b.x += tx / dist * step;
+      b.y += ty / dist * step;
+      turnTo(b, Math.atan2(ty, tx), dt);
+    }
+
+    const mouthX = b.x + Math.cos(b.angle) * b.size * 0.7;
+    const mouthY = b.y + Math.sin(b.angle) * b.size * 0.7;
+    for (const f of fish) {
+      if (f.gift || f.eaten) continue;
+      if (Math.hypot(f.x - mouthX, f.y - mouthY) < b.size * 0.5 + f.r) {
+        f.eaten = true;
+        b.chomp = 1;
+        scoreFish(f);
+      }
+    }
+  });
+}
+
+function scoreFish(f) {
+  const points = f.points * (shark.rainbow ? 2 : 1);
+  score += points;
+  catchFish();
+  popups.push({ x: f.x, y: f.y, text: `+${points}`, life: 0.7 });
+  beep(f.points > 1 ? 900 : 500, 1100, 0.16, 'triangle', 0.1);
+  updateHud();
+}
+
+function endGame(title, message) {
+  playing = false;
+  canRestartAt = performance.now() + 700;
+  levelBanner = 0;
+  const newBest = score > best;
+  if (newBest) {
+    best = score;
+    try { localStorage.setItem('sharkBest', best); } catch (e) {}
+  }
+  $('title').textContent = title;
+  $('info').textContent = `${message} You scored ${score}. ` + (newBest ? 'New best!' : `Best: ${best}`);
+  $('go').textContent = 'Play again';
+  screenEl.classList.remove('hidden');
+}
+
+function gameOver() {
+  endGame('Great swimming!', `You became a ${LEVELS[level - 1]}!`);
+}
+
+function winGame() {
+  endGame('🎉 You did it! 🎉', `Your army of ${MAX_BABIES} baby sharks is all grown up!`);
+  [523, 659, 784, 1047, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, f, 0.22, 'triangle', 0.14), i * 140));
+  say('You did it! Your baby shark army is all grown up!');
+}
+
+function updateHud() {
+  $('score').textContent = `Score ${score}`;
+  $('hearts').textContent = '❤️'.repeat(hearts);
+  $('babies').textContent = babies.length ? `Baby sharks: ${babies.length}` : '';
+  const maxed = level === LEVELS.length;
+  $('level').textContent = `Level ${level}: ${LEVELS[level - 1]}`;
+  $('barFill').style.width = (maxed ? 100 : levelFish / FISH_PER_LEVEL * 100) + '%';
+}
+
+// Big jumps up to level 6, then small ones so the shark stays easy to steer
+function levelBoost() {
+  return Math.min(level - 1, 5) + Math.max(level - 6, 0) * 0.25;
+}
+
+function showBanner(title, words) {
+  bannerTitle = title;
+  bannerWords = words;
+  levelBanner = 2;
+}
+
+function catchFish() {
+  if (level === LEVELS.length) return;
+  levelFish++;
+  if (levelFish < FISH_PER_LEVEL) return;
+  levelFish = 0;
+  level++;
+  showBanner(`Level ${level}!`, `${LEVELS[level - 1]}: bigger and faster!`);
+  if (level === BABIES_FROM_LEVEL) {
+    growArmy();
+    showBanner(`Level ${level}!`, 'Your first baby shark is here!');
+  }
+  [440, 554, 659, 880].forEach((f, i) => setTimeout(() => beep(f, f, 0.16, 'triangle', 0.12), i * 90));
+}
+
+// ---- Update ----
+function update(dt) {
+  time += dt;
+
+  for (const b of bubbles) {
+    b.y -= b.speed * dt;
+    if (b.y < -10) { b.y = H + 10; b.x = rand(0, W); }
+  }
+  for (const p of popups) { p.y -= 50 * dt; p.life -= dt; }
+  popups = popups.filter(p => p.life > 0);
+  for (const t of trail) t.life -= dt;
+  trail = trail.filter(t => t.life > 0);
+
+  levelBanner = Math.max(0, levelBanner - dt);
+  if (!playing || quizOpen) return;
+
+  // Grow smoothly towards the size for this level
+  const fullSize = Math.min(SHARK_START_SIZE + levelBoost() * SIZE_PER_LEVEL, Math.min(W, H) * MAX_SIZE_OF_SCREEN);
+  shark.size += (fullSize - shark.size) * Math.min(1, dt * 3);
+  const speed = SHARK_SPEED + levelBoost() * SPEED_PER_LEVEL;
+  const oldX = shark.x, oldY = shark.y;
+
+  // Move the shark
+  let dx = 0, dy = 0;
+  if (keys['arrowleft'] || keys['a']) dx -= 1;
+  if (keys['arrowright'] || keys['d']) dx += 1;
+  if (keys['arrowup'] || keys['w']) dy -= 1;
+  if (keys['arrowdown'] || keys['s']) dy += 1;
+
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    dx /= len; dy /= len;
+    shark.x += dx * speed * dt;
+    shark.y += dy * speed * dt;
+    turnTo(shark, Math.atan2(dy, dx), dt);
+  } else if (pointer) {
+    const tx = pointer.x - shark.x, ty = pointer.y - shark.y;
+    const dist = Math.hypot(tx, ty);
+    if (dist > 8) {
+      const step = Math.min(speed * dt, dist);
+      shark.x += tx / dist * step;
+      shark.y += ty / dist * step;
+      turnTo(shark, Math.atan2(ty, tx), dt);
+    }
+  }
+  shark.x = Math.max(0, Math.min(W, shark.x));
+  shark.y = Math.max(0, Math.min(H, shark.y));
+  shark.chomp = Math.max(0, shark.chomp - dt * 4);
+  shark.hurt = Math.max(0, shark.hurt - dt);
+  shark.rainbow = Math.max(0, shark.rainbow - dt);
+  if (shark.rainbow) {
+    trail.push({ x: shark.x, y: shark.y, colour: `hsla(${time * 400 % 360}, 90%, 65%,`, life: 0.7 });
+  } else if (level >= 3 && (shark.x !== oldX || shark.y !== oldY)) {
+    trail.push({ x: shark.x, y: shark.y, colour: 'hsla(195, 100%, 92%,', life: 0.3 });   // speedy wake
+  }
+
+  const mouthX = shark.x + Math.cos(shark.angle) * shark.size * 0.7;
+  const mouthY = shark.y + Math.sin(shark.angle) * shark.size * 0.7;
+
+  // Fish
+  let openGift = false;
+  for (const s of fish) {
+    s.x += s.dir * s.speed * dt;
+    s.bob += dt * 3;
+    if (Math.hypot(s.x - mouthX, s.y - mouthY) < shark.size * 0.5 + s.r) {
+      s.eaten = true;
+      shark.chomp = 1;
+      if (s.gift) { openGift = true; continue; }
+      scoreFish(s);
+    }
+  }
+  updateBabies(dt);
+  fish = fish.filter(s => !s.eaten && s.x > -60 && s.x < W + 60);
+  while (fish.length < FISH_COUNT) spawnFish();
+  if (openGift) { openQuiz(); return; }
+
+  // Jellyfish (rainbow power swims straight through them)
+  for (const j of jellies) {
+    j.y += j.dir * j.speed * dt;
+    j.wiggle += dt * 4;
+    if (!shark.hurt && !shark.rainbow && Math.hypot(j.x - shark.x, j.y - shark.y) < shark.size * 0.6 + j.r * 0.8) {
+      shark.hurt = 1.5;     // a moment of safety after a bump
+      hearts--;
+      popups.push({ x: shark.x, y: shark.y - 30, text: 'Oops!', life: 0.9 });
+      beep(420, 180, 0.35, 'triangle', 0.12);
+      updateHud();
+      if (hearts <= 0) {
+        sharkLost();
+        if (!playing) return;
+      }
+    }
+  }
+  jellies = jellies.filter(j => j.y > -80 && j.y < H + 80);
+  while (jellies.length < jelliesWanted()) spawnJelly();
+}
+
+function turnTo(s, target, dt) {
+  let diff = target - s.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  s.angle += diff * Math.min(1, dt * 10);
+}
+
+// ---- Drawing ----
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = `${size}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, x, y);
+}
+
+function drawSea() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2bb6e8');
+  g.addColorStop(0.55, '#127fc0');
+  g.addColorStop(1, '#0a4a7a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#ffffff55';
+  for (const b of bubbles) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Sand and seaweed
+  ctx.fillStyle = '#e9c98a';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  ctx.lineTo(0, H - 34);
+  ctx.quadraticCurveTo(W * 0.3, H - 62, W * 0.55, H - 36);
+  ctx.quadraticCurveTo(W * 0.8, H - 16, W, H - 42);
+  ctx.lineTo(W, H);
+  ctx.fill();
+
+  ctx.strokeStyle = '#1f8a5b';
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  for (const s of seaweed) {
+    const x = s.x * W, sway = Math.sin(time * 1.5 + x) * 16;
+    ctx.beginPath();
+    ctx.moveTo(x, H - 20);
+    ctx.quadraticCurveTo(x - sway, H - 20 - s.h / 2, x + sway, H - 20 - s.h);
+    ctx.stroke();
+  }
+}
+
+function drawFish(f) {
+  if (f.gift) {
+    ctx.fillStyle = '#000';
+    drawEmoji('🎁', f.x, f.y + Math.sin(f.bob) * 6, f.r * 2);
+    return;
+  }
+  ctx.save();
+  ctx.translate(f.x, f.y);
+  ctx.scale(f.dir, 1);
+  const r = f.r;
+  ctx.fillStyle = f.colour;
+  // tail
+  const flap = Math.sin(f.bob * 3) * r * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.8, 0);
+  ctx.lineTo(-r * 1.7, -r * 0.7 + flap);
+  ctx.lineTo(-r * 1.7, r * 0.7 + flap);
+  ctx.fill();
+  // body
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r * 1.2, r * 0.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(r * 0.6, -r * 0.2, r * 0.27, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.arc(r * 0.67, -r * 0.2, r * 0.13, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawJelly(j) {
+  ctx.save();
+  ctx.translate(j.x, j.y);
+  const r = j.r;
+  ctx.strokeStyle = '#f7a8e0cc';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (let i = -2; i <= 2; i++) {
+    const x = i * r * 0.36;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.quadraticCurveTo(x + Math.sin(j.wiggle + i) * 10, r * 0.8, x + Math.sin(j.wiggle + i + 1) * 12, r * 1.5);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#e872c8';
+  ctx.beginPath();
+  ctx.arc(0, 0, r, Math.PI, 0);
+  ctx.quadraticCurveTo(0, r * 0.45, -r, 0);
+  ctx.fill();
+  // Silly wobbly face
+  ctx.fillStyle = '#4a1040';
+  ctx.beginPath();
+  ctx.arc(-r * 0.32, -r * 0.4, r * 0.11, 0, Math.PI * 2);
+  ctx.arc(r * 0.32, -r * 0.4, r * 0.11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#4a1040';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, -r * 0.2, r * 0.22, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTrail() {
+  for (const t of trail) {
+    ctx.fillStyle = `${t.colour} ${t.life})`;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, shark.size * 0.4 * t.life + 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawShark(s) {
+  // Blink after a bump
+  if (s.hurt && Math.floor(time * 12) % 2 === 0) return;
+
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(s.angle);
+  if (Math.cos(s.angle) < 0) ctx.scale(1, -1);  // keep the belly down
+  const k = s.size / 60;
+  ctx.scale(k, k);
+
+  const blue = shark.rainbow ? `hsl(${time * 300 % 360}, 80%, 65%)` : '#5fb4e6';
+
+  // Tail
+  ctx.save();
+  ctx.translate(-50, 0);
+  ctx.rotate(Math.sin(time * 9 + (s.phase || 0)) * 0.3);
+  ctx.fillStyle = blue;
+  ctx.beginPath();
+  ctx.moveTo(4, -8);
+  ctx.quadraticCurveTo(-20, -18, -34, -30);
+  ctx.quadraticCurveTo(-24, 0, -30, 24);
+  ctx.quadraticCurveTo(-16, 14, 4, 8);
+  ctx.fill();
+  ctx.restore();
+
+  // Back fin (rounded, not pointy)
+  ctx.fillStyle = blue;
+  ctx.beginPath();
+  ctx.moveTo(16, -26);
+  ctx.quadraticCurveTo(-2, -48, -16, -46);
+  ctx.quadraticCurveTo(-14, -32, -22, -22);
+  ctx.fill();
+
+  // Chubby body
+  ctx.beginPath();
+  ctx.ellipse(4, 0, 60, 32, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // White tummy
+  ctx.fillStyle = '#fbfdff';
+  ctx.beginPath();
+  ctx.ellipse(10, 15, 48, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Waving side fin
+  ctx.save();
+  ctx.translate(0, 16);
+  ctx.rotate(0.5 + Math.sin(time * 6) * 0.3);
+  ctx.fillStyle = blue;
+  ctx.beginPath();
+  ctx.ellipse(-12, 8, 18, 9, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Rosy cheek
+  ctx.fillStyle = '#ff9eb5aa';
+  ctx.beginPath();
+  ctx.arc(30, 7, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Big smile, which opens into a round "yum" on each bite
+  ctx.strokeStyle = '#123e5c';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  if (s.chomp > 0.1) {
+    ctx.fillStyle = '#d6455d';
+    ctx.beginPath();
+    ctx.ellipse(50, 8, 8, 4 + s.chomp * 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(46, 2, 14, 0.3, Math.PI - 0.7);
+    ctx.stroke();
+  }
+
+  // Big sparkly eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(36, -9, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#123e5c';
+  ctx.beginPath();
+  ctx.arc(38, -9, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(40, -12, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Prizes
+  ctx.fillStyle = '#000';
+  if (s === shark) for (const p of wearing) drawEmoji(p.emoji, p.x, p.y, p.size);
+
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.font = '700 26px "Trebuchet MS", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#fff';
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawLevelBanner() {
+  if (!levelBanner) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, levelBanner * 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#0a4a7a';
+  ctx.fillStyle = '#ffd23f';
+  ctx.font = `700 ${Math.min(64, W / 11)}px "Trebuchet MS", system-ui, sans-serif`;
+  ctx.strokeText(bannerTitle, W / 2, H * 0.3);
+  ctx.fillText(bannerTitle, W / 2, H * 0.3);
+  ctx.fillStyle = '#fff';
+  ctx.font = `700 ${Math.min(34, W / 16)}px "Trebuchet MS", system-ui, sans-serif`;
+  ctx.strokeText(bannerWords, W / 2, H * 0.3 + 56);
+  ctx.fillText(bannerWords, W / 2, H * 0.3 + 56);
+  ctx.restore();
+}
+
+function draw() {
+  drawSea();
+  fish.forEach(drawFish);
+  jellies.forEach(drawJelly);
+  drawTrail();
+  if (started) babies.forEach(drawShark);
+  if (started) drawShark(shark);
+  drawPopups();
+  drawLevelBanner();
+}
+
+// ---- Main loop ----
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+updateHud();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
