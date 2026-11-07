@@ -76,7 +76,7 @@
 
 <div id="screen" class="overlay">
   <h1 id="title">Shark Snack</h1>
-  <p id="info">Help the friendly shark catch fish. Dodge the wobbly jellyfish!<br>Golden fish are worth 5 points.<br>Catch a 🎁 for a bonus question and win a prize!<br>Reach level 20 and right answers bring baby sharks!</p>
+  <p id="info">Help the friendly shark catch fish. Dodge the wobbly jellyfish!<br>Golden fish are worth 5 points.<br>Catch a 🎁 for a bonus question and win a prize!<br>At level 10 sharp teeth let you bite jellyfish!<br>Reach level 20 and right answers bring baby sharks!</p>
   <div class="go" id="go">Play</div>
 </div>
 
@@ -114,6 +114,10 @@ const BOOST_FROM_LEVEL = 7;    // boost bubbles start at this level
 const BOOST_SECONDS = 5;
 const BOOST_SPEED = 1.8;      // how many times faster the shark goes
 const BOOST_EVERY = 12;       // seconds between boost bubbles
+const TEETH_FROM_LEVEL = 10;   // sharp teeth bite jellyfish and tough fish
+const TEETH_POINTS = 3;        // points for a jellyfish or a tough fish
+const TOUGH_CHANCE = 0.25;     // how many fish are tough once you have teeth
+const TOUGH_SPEED = 1.3;       // how many times faster tough fish swim
 const BABIES_FROM_LEVEL = 20; // baby sharks start at this level
 const MAX_JELLIES = 14;        // on a big screen; fewer on small ones
 const JELLY_SPEED_PER_LEVEL = 0.1;  // 10% faster each level
@@ -255,15 +259,17 @@ function spawnFish() {
   const fromLeft = Math.random() < 0.5;
   const giftDue = score >= nextGiftAt && !fish.some(s => s.gift);
   const golden = !giftDue && Math.random() < 0.1;
+  const tough = !giftDue && !golden && level >= TEETH_FROM_LEVEL && Math.random() < TOUGH_CHANCE;
   fish.push({
     x: fromLeft ? -40 : W + 40,
     y: rand(60, H - 100),
     dir: fromLeft ? 1 : -1,
-    speed: giftDue ? 80 : rand(70, 170) * (golden ? 1.6 : 1),
-    r: giftDue ? 34 : golden ? 17 : rand(12, 22),
-    colour: golden ? GOLD : pick(FISH_COLOURS),
-    points: golden ? 5 : 1,
+    speed: giftDue ? 80 : rand(70, 170) * (golden ? 1.6 : tough ? TOUGH_SPEED : 1),
+    r: giftDue ? 34 : golden ? 17 : tough ? 24 : rand(12, 22),
+    colour: golden ? GOLD : tough ? '#7f93ad' : pick(FISH_COLOURS),
+    points: golden ? 5 : tough ? TEETH_POINTS : 1,
     gift: giftDue,
+    tough,
     bob: rand(0, 6),
   });
 }
@@ -757,6 +763,10 @@ function catchFish() {
     say('You unlocked the bubble boost! Catch the big bubbles to zoom!');
     boostTimer = 2;
   }
+  if (level === TEETH_FROM_LEVEL) {
+    showBanner(`Level ${level}!`, 'Sharp teeth unlocked!');
+    say('You unlocked sharp teeth! Now you can bite jellyfish and tough fish!');
+  }
   if (level === BABIES_FROM_LEVEL) {
     growArmy();
     showBanner(`Level ${level}!`, 'Your first baby shark is here!');
@@ -843,10 +853,16 @@ function update(dt) {
   while (fish.length < FISH_COUNT) spawnFish();
   if (openGift) { openQuiz(); return; }
 
-  // Jellyfish (rainbow power swims straight through them)
+  // Jellyfish (rainbow power swims straight through them, sharp teeth bite them)
   for (const j of jellies) {
     j.y += j.dir * j.speed * dt;
     j.wiggle += dt * 4;
+    if (level >= TEETH_FROM_LEVEL && Math.hypot(j.x - mouthX, j.y - mouthY) < shark.size * 0.5 + j.r) {
+      j.eaten = true;
+      shark.chomp = 1;
+      scoreFish({ x: j.x, y: j.y, points: TEETH_POINTS });
+      continue;
+    }
     if (!shark.hurt && !shark.rainbow && !shark.boost && Math.hypot(j.x - shark.x, j.y - shark.y) < shark.size * 0.6 + j.r * 0.8) {
       shark.hurt = 1.5;     // a moment of safety after a bump
       hearts--;
@@ -859,7 +875,7 @@ function update(dt) {
       }
     }
   }
-  jellies = jellies.filter(j => j.y > -80 && j.y < H + 80);
+  jellies = jellies.filter(j => !j.eaten && j.y > -80 && j.y < H + 80);
   while (jellies.length < jelliesWanted()) spawnJelly();
 }
 
@@ -928,6 +944,18 @@ function drawFish(f) {
   ctx.fillStyle = f.colour;
   // tail
   const flap = Math.sin(f.bob * 3) * r * 0.3;
+  // tough fish have a spiky back
+  if (f.tough) {
+    ctx.beginPath();
+    for (let i = -2; i <= 2; i++) {
+      const x = i * r * 0.4;
+      const top = -r * 0.8 * Math.sqrt(1 - (x / (r * 1.2)) ** 2);
+      ctx.moveTo(x - r * 0.22, top + r * 0.1);
+      ctx.lineTo(x, top - r * 0.5);
+      ctx.lineTo(x + r * 0.22, top + r * 0.1);
+    }
+    ctx.fill();
+  }
   ctx.beginPath();
   ctx.moveTo(-r * 0.8, 0);
   ctx.lineTo(-r * 1.7, -r * 0.7 + flap);
@@ -937,6 +965,18 @@ function drawFish(f) {
   ctx.beginPath();
   ctx.ellipse(0, 0, r * 1.2, r * 0.8, 0, 0, Math.PI * 2);
   ctx.fill();
+  // tough fish have armour stripes
+  if (f.tough) {
+    ctx.strokeStyle = '#4f6480';
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = 'round';
+    for (const x of [-0.55, -0.1, 0.3]) {
+      ctx.beginPath();
+      ctx.moveTo(r * x, -r * 0.5);
+      ctx.quadraticCurveTo(r * (x + 0.15), 0, r * x, r * 0.5);
+      ctx.stroke();
+    }
+  }
   // eye
   ctx.fillStyle = '#fff';
   ctx.beginPath();
@@ -989,6 +1029,20 @@ function drawTrail() {
     ctx.arc(t.x, t.y, shark.size * 0.4 * t.life + 4, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function drawTooth(x, y) {
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#123e5c';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - 3.5, y);
+  ctx.lineTo(x, y + 9);
+  ctx.lineTo(x + 3.5, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 }
 
 function drawShark(s) {
@@ -1061,10 +1115,14 @@ function drawShark(s) {
     ctx.beginPath();
     ctx.ellipse(50, 8, 8, 4 + s.chomp * 9, 0, 0, Math.PI * 2);
     ctx.fill();
+    if (level >= TEETH_FROM_LEVEL) for (const x of [45, 50, 55]) drawTooth(x, 8 - (3 + s.chomp * 9));
   } else {
     ctx.beginPath();
     ctx.arc(46, 2, 14, 0.3, Math.PI - 0.7);
     ctx.stroke();
+    if (level >= TEETH_FROM_LEVEL) {
+      for (const a of [0.6, 1.1, 1.6, 2.1]) drawTooth(46 + Math.cos(a) * 14, 2 + Math.sin(a) * 14);
+    }
   }
 
   // Big sparkly eye
