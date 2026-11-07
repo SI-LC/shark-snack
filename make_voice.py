@@ -94,6 +94,8 @@ for boxes in range(2, 6):
 lines.add('Nearly! Try again.')
 lines.add('A new baby shark has joined you!')
 lines.add('Your baby sharks grew bigger!')
+lines.add('Bubble boost!')
+lines.add('You unlocked the bubble boost! Catch the big bubbles to zoom!')
 lines.add('You did it! Your baby shark army is all grown up!')
 lines.add('Baby to the rescue! Your biggest baby takes over!')
 lines.add('Well done! You won rainbow power!')

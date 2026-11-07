@@ -110,6 +110,10 @@ const LEVELS = [
   'Tide Master', 'Sea Star', 'Thunder Fin', 'Golden Fin', 'Rocket Fin',
   'Giant Fin', 'Sea Legend', 'Ocean Hero', 'Shark Captain', 'Shark Parent',
 ];
+const BOOST_FROM_LEVEL = 7;    // boost bubbles start at this level
+const BOOST_SECONDS = 5;
+const BOOST_SPEED = 1.8;      // how many times faster the shark goes
+const BOOST_EVERY = 12;       // seconds between boost bubbles
 const BABIES_FROM_LEVEL = 20; // baby sharks start at this level
 const MAX_JELLIES = 14;        // on a big screen; fewer on small ones
 const JELLY_SPEED_PER_LEVEL = 0.1;  // 10% faster each level
@@ -214,10 +218,12 @@ let levelBanner = 0;    // seconds left on the big message
 let bannerTitle = '';
 let bannerWords = '';
 let babies = [];
+let boostBubble = null; // the bubble floating up, if there is one
+let boostTimer = 0;     // seconds until the next one
 let best = 0;
 try { best = Number(localStorage.getItem('sharkBest')) || 0; } catch (e) {}
 
-const shark = { x: 0, y: 0, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0 };
+const shark = { x: 0, y: 0, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0, boost: 0 };
 const wearing = [];   // prizes stay on for the whole visit, even after game over
 let fish = [];
 let jellies = [];
@@ -571,12 +577,14 @@ function start() {
   levelFish = 0;
   levelBanner = 0;
   quizCount = 0;
+  boostBubble = null;
+  boostTimer = 0;
   babies = [];
   fish = [];
   jellies = [];
   popups = [];
   trail = [];
-  Object.assign(shark, { x: W / 2, y: H / 2, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0 });
+  Object.assign(shark, { x: W / 2, y: H / 2, angle: 0, size: SHARK_START_SIZE, chomp: 0, hurt: 0, rainbow: 0, boost: 0 });
   for (let i = 0; i < FISH_COUNT; i++) {
     spawnFish();
     fish[i].x = rand(0, W);
@@ -617,6 +625,30 @@ function sharkLost() {
   showBanner('Baby to the rescue!', 'Your biggest baby takes over!');
   [392, 523, 659].forEach((f, i) => setTimeout(() => beep(f, f, 0.18, 'triangle', 0.12), i * 100));
   say('Baby to the rescue! Your biggest baby takes over!');
+}
+
+function updateBoost(dt) {
+  shark.boost = Math.max(0, shark.boost - dt);
+  if (level < BOOST_FROM_LEVEL) return;
+
+  if (!boostBubble) {
+    boostTimer -= dt;
+    if (boostTimer <= 0) boostBubble = { x: rand(60, W - 60), y: H + 40, r: 34 };
+    return;
+  }
+  boostBubble.y -= 70 * dt;
+  boostBubble.x += Math.sin(time * 2) * 30 * dt;
+  const caught = Math.hypot(boostBubble.x - shark.x, boostBubble.y - shark.y) < shark.size * 0.6 + boostBubble.r;
+  if (caught) {
+    shark.boost = BOOST_SECONDS;
+    popups.push({ x: boostBubble.x, y: boostBubble.y, text: 'Bubble boost!', life: 1 });
+    beep(400, 1200, 0.4, 'triangle', 0.14);
+    say('Bubble boost!');
+  }
+  if (caught || boostBubble.y < -50) {
+    boostBubble = null;
+    boostTimer = BOOST_EVERY;
+  }
 }
 
 function updateBabies(dt) {
@@ -720,6 +752,11 @@ function catchFish() {
   levelFish = 0;
   level++;
   showBanner(`Level ${level}!`, `${LEVELS[level - 1]}: bigger and faster!`);
+  if (level === BOOST_FROM_LEVEL) {
+    showBanner(`Level ${level}!`, 'Bubble boost unlocked!');
+    say('You unlocked the bubble boost! Catch the big bubbles to zoom!');
+    boostTimer = 2;
+  }
   if (level === BABIES_FROM_LEVEL) {
     growArmy();
     showBanner(`Level ${level}!`, 'Your first baby shark is here!');
@@ -746,7 +783,7 @@ function update(dt) {
   // Grow smoothly towards the size for this level
   const fullSize = Math.min(SHARK_START_SIZE + levelBoost() * SIZE_PER_LEVEL, Math.min(W, H) * MAX_SIZE_OF_SCREEN);
   shark.size += (fullSize - shark.size) * Math.min(1, dt * 3);
-  const speed = SHARK_SPEED + levelBoost() * SPEED_PER_LEVEL;
+  const speed = (SHARK_SPEED + levelBoost() * SPEED_PER_LEVEL) * (shark.boost ? BOOST_SPEED : 1);
   const oldX = shark.x, oldY = shark.y;
 
   // Move the shark
@@ -777,8 +814,11 @@ function update(dt) {
   shark.chomp = Math.max(0, shark.chomp - dt * 4);
   shark.hurt = Math.max(0, shark.hurt - dt);
   shark.rainbow = Math.max(0, shark.rainbow - dt);
+  updateBoost(dt);
   if (shark.rainbow) {
     trail.push({ x: shark.x, y: shark.y, colour: `hsla(${time * 400 % 360}, 90%, 65%,`, life: 0.7 });
+  } else if (shark.boost) {
+    trail.push({ x: shark.x, y: shark.y, colour: 'hsla(195, 100%, 92%,', life: 0.6 });
   } else if (level >= 3 && (shark.x !== oldX || shark.y !== oldY)) {
     trail.push({ x: shark.x, y: shark.y, colour: 'hsla(195, 100%, 92%,', life: 0.3 });   // speedy wake
   }
@@ -807,7 +847,7 @@ function update(dt) {
   for (const j of jellies) {
     j.y += j.dir * j.speed * dt;
     j.wiggle += dt * 4;
-    if (!shark.hurt && !shark.rainbow && Math.hypot(j.x - shark.x, j.y - shark.y) < shark.size * 0.6 + j.r * 0.8) {
+    if (!shark.hurt && !shark.rainbow && !shark.boost && Math.hypot(j.x - shark.x, j.y - shark.y) < shark.size * 0.6 + j.r * 0.8) {
       shark.hurt = 1.5;     // a moment of safety after a bump
       hearts--;
       popups.push({ x: shark.x, y: shark.y - 30, text: 'Oops!', life: 0.9 });
@@ -1048,6 +1088,22 @@ function drawShark(s) {
   ctx.restore();
 }
 
+function drawBubble(x, y, r, wide) {
+  ctx.save();
+  ctx.fillStyle = '#bfefff44';
+  ctx.strokeStyle = '#ffffffdd';
+  ctx.lineWidth = wide;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffffcc';
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.4, y - r * 0.45, r * 0.2, r * 0.12, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPopups() {
   ctx.font = '700 26px "Trebuchet MS", system-ui, sans-serif';
   ctx.textAlign = 'center';
@@ -1087,6 +1143,11 @@ function draw() {
   drawTrail();
   if (started) babies.forEach(drawShark);
   if (started) drawShark(shark);
+  if (boostBubble) drawBubble(boostBubble.x, boostBubble.y + Math.sin(time * 3) * 4, boostBubble.r, 4);
+  // The bubble around the shark flickers when the boost is about to run out
+  if (shark.boost > 1 || Math.floor(time * 8) % 2) {
+    if (shark.boost) drawBubble(shark.x, shark.y, shark.size * 1.5, 5);
+  }
   drawPopups();
   drawLevelBanner();
 }
