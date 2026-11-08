@@ -55,6 +55,24 @@
   #answers.many { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   #answers.many button { min-width: 0; min-height: 56px; padding: 6px 4px; font-size: clamp(17px, 3.6vw, 22px); }
   @media (max-width: 380px) { #answers.many { grid-template-columns: repeat(2, 1fr); } }
+  #answers.spell { flex-direction: column; align-items: stretch; gap: 16px; }
+  .slots { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .slots span {
+    display: flex; align-items: center; justify-content: center;
+    width: clamp(34px, 9vw, 48px); height: clamp(46px, 11vw, 58px);
+    border-radius: 10px 10px 0 0; border-bottom: 4px solid #123e5c; background: #e7f4fb;
+    font-size: clamp(28px, 7vw, 40px); font-weight: 700;
+  }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  #answers .tiles button {
+    flex: 0 0 auto; width: clamp(50px, 13vw, 64px); min-height: clamp(54px, 13vw, 64px);
+    padding: 0; font-size: clamp(28px, 6.5vw, 36px);
+  }
+  .tools { display: flex; gap: 10px; }
+  #answers .tools button { flex: 1 1 0; min-height: 60px; font-size: 24px; }
+  #answers .tools .undo { background: #8fa7bf; }
+  #answers .tools .check { background: #3bb273; }
+  #answers .tools button:disabled { background: #cfd8dc; }
   #answers button:disabled { background: #cfd8dc; cursor: default; }
   #hear { margin-top: 14px; padding: 8px 16px; background: #e7f4fb; color: #123e5c; font-size: 18px; }
   .hidden { display: none !important; }
@@ -150,11 +168,6 @@ const PRIZES = [
 
 // Add more questions here! Put the right answer first; they get shuffled.
 const QUESTIONS = [
-  { q: '<div class="things">🐟</div>How do you spell this word?', say: 'How do you spell fish?', answers: ['fish', 'fsh', 'fihs'], why: 'Fish is spelled f, i, s, h.' },
-  { q: '<div class="things">🐱</div>How do you spell this word?', say: 'How do you spell cat?', answers: ['cat', 'ct', 'cta'], why: 'Cat is spelled c, a, t.' },
-  { q: '<div class="things">🐶</div>How do you spell this word?', say: 'How do you spell dog?', answers: ['dog', 'dg', 'dgo'], why: 'Dog is spelled d, o, g.' },
-  { q: '<div class="things">☀️</div>How do you spell this word?', say: 'How do you spell sun?', answers: ['sun', 'sn', 'snu'], why: 'Sun is spelled s, u, n.' },
-  { q: '<div class="things">🚢</div>How do you spell this word?', say: 'How do you spell ship?', answers: ['ship', 'shp', 'sihp'], why: 'Ship is spelled s, h, i, p.' },
   { q: 'Which word rhymes with "shark"?', answers: ['park', 'ship', 'fish'], why: 'Park rhymes with shark. They sound the same at the end.' },
   { q: 'Which word rhymes with "wave"?', answers: ['cave', 'wind', 'sand'], why: 'Cave rhymes with wave. They sound the same at the end.' },
   { q: 'What is the opposite of "deep"?', answers: ['shallow', 'wet', 'blue'], why: 'Shallow is the opposite of deep.' },
@@ -188,6 +201,64 @@ const CHALLENGES = [
   { q: 'Which of these animals is a mammal?', answers: ['Dolphin', 'Shark', 'Crab', 'Jellyfish', 'Goldfish', 'Turtle'], why: 'A dolphin is a mammal. It breathes air and feeds its babies milk.' },
   { q: 'What is the biggest animal in the world?', answers: ['Blue whale', 'Elephant', 'Giraffe', 'Great white shark', 'Hippo', 'Polar bear'], why: 'The blue whale is the biggest animal in the world.' },
   { q: 'Which is the biggest ocean?', answers: ['Pacific', 'Atlantic', 'Indian', 'Arctic', 'Southern', 'North Sea'], why: 'The Pacific is the biggest ocean.' },
+];
+
+// Dictation: the word is only spoken, never shown. [word, a sentence using it]
+// Simple words you can sound out, for normal bonus questions
+const SIMPLE_WORDS = [
+  ['cat', 'The cat sat on the mat.'],
+  ['dog', 'The dog digs in the sand.'],
+  ['sun', 'The sun is hot today.'],
+  ['fish', 'The shark ate a fish.'],
+  ['ship', 'The big ship sails on the sea.'],
+  ['frog', 'The frog jumped into the pond.'],
+  ['crab', 'A crab walks sideways.'],
+  ['jump', 'Can you jump up high?'],
+  ['swim', 'Sharks love to swim.'],
+  ['shark', 'The shark has a big smile.'],
+  ['shell', 'I found a shell on the beach.'],
+  ['net', 'The fish swam into the net.'],
+  ['bed', 'It is time for bed.'],
+  ['hat', 'The shark has a top hat.'],
+  ['pen', 'I can write with a pen.'],
+  ['bug', 'A little bug sat on the leaf.'],
+  ['red', 'The crab is red.'],
+  ['pig', 'The pig rolls in the mud.'],
+  ['hop', 'The bunny can hop.'],
+  ['chip', 'Can I have a chip?'],
+  ['moon', 'The moon is bright at night.'],
+  ['rain', 'The rain makes me wet.'],
+  ['boat', 'We sailed in a little boat.'],
+  ['fin', 'The shark has a big fin.'],
+  ['sand', 'We built a castle in the sand.'],
+];
+// Tricky words you have to learn by heart, for challenge questions
+const TRICKY_WORDS = [
+  ['the', 'The shark is friendly.'],
+  ['said', 'The shark said hello.'],
+  ['was', 'The fish was very fast.'],
+  ['they', 'They swim in the sea.'],
+  ['you', 'Can you see the shark?'],
+  ['are', 'We are best friends.'],
+  ['come', 'Come and play with me.'],
+  ['some', 'Can I have some fish?'],
+  ['there', 'There is a crab on the rock.'],
+  ['where', 'Where is the little fish?'],
+  ['friend', 'The shark is my friend.'],
+  ['water', 'Fish live in the water.'],
+  ['people', 'Lots of people go to the beach.'],
+  ['because', 'I am happy because it is sunny.'],
+  ['one', 'I have one big shark.'],
+  ['two', 'The crab has two claws.'],
+  ['what', 'What is your name?'],
+  ['want', 'I want to swim.'],
+  ['does', 'Does the shark like fish?'],
+  ['have', 'I have a red hat.'],
+  ['your', 'Is this your shell?'],
+  ['here', 'Come here, little fish.'],
+  ['who', 'Who ate all the fish?'],
+  ['school', 'We go to school in the morning.'],
+  ['could', 'Could you help me?'],
 ];
 
 let W = 0, H = 0;
@@ -403,8 +474,26 @@ function numberChoices(right, count = 3) {
 const addWhy = (a, b) => `${a} plus ${b} is ${a + b}. Start at ${a} and count on ${b}.`;
 const takeWhy = (a, b) => `${a} take away ${b} is ${a - b}. Start at ${a} and count back ${b}.`;
 
+let simpleBag = [];
+let trickyBag = [];
+
+function dictation(tricky) {
+  if (tricky && !trickyBag.length) trickyBag = shuffled(TRICKY_WORDS);
+  if (!tricky && !simpleBag.length) simpleBag = shuffled(SIMPLE_WORDS);
+  const [word, sentence] = (tricky ? trickyBag : simpleBag).pop();
+  const Word = word[0].toUpperCase() + word.slice(1);
+  return {
+    q: '<div class="things">👂🦈</div>Listen, then spell the word.',
+    say: `${Word}. ${sentence} ${Word}.`,
+    answers: [word],
+    dictation: word,
+    why: `${Word} is spelled ${[...word].join(', ')}.`,
+  };
+}
+
 function makeQuestion() {
-  const kind = pick(['add', 'take', 'missing', 'double', 'half', 'story', 'count', 'other', 'other', 'other']);
+  const kind = pick(['add', 'take', 'missing', 'double', 'half', 'story', 'count', 'spell', 'spell', 'spell', 'other', 'other', 'other']);
+  if (kind === 'spell') return dictation(false);
   if (kind === 'add') {
     const a = int(3, 12), b = int(2, 8);
     return { q: `What is ${a} + ${b}?`, say: `What is ${a} plus ${b}?`, answers: numberChoices(a + b), why: addWhy(a, b) };
@@ -453,7 +542,8 @@ function makeQuestion() {
 }
 
 function makeChallenge() {
-  const kind = pick(['times', 'add', 'take', 'three', 'groups', 'other', 'other']);
+  const kind = pick(['times', 'add', 'take', 'three', 'groups', 'spell', 'spell', 'other', 'other']);
+  if (kind === 'spell') return dictation(true);
   if (kind === 'times') {
     const a = pick([2, 5, 10]), b = int(2, 10);
     return { q: `What is ${a} × ${b}?`, say: `What is ${a} times ${b}?`, answers: numberChoices(a * b, 6), why: `${a} times ${b} is ${a * b}. That is ${b} lots of ${a}.` };
@@ -494,28 +584,104 @@ function openQuiz() {
   $('hear').classList.remove('hidden');
   const box = $('answers');
   box.innerHTML = '';
-  box.classList.toggle('many', q.answers.length > 3);
-  for (const answer of shuffled(q.answers)) {
-    const b = document.createElement('button');
-    b.textContent = answer;
-    b.onclick = () => {
-      if (answer === right) return showPrize();
-      // A wrong answer costs a heart, then you can try another one
-      b.disabled = true;
-      hearts--;
-      updateHud();
-      beep(380, 280, 0.25, 'triangle', 0.1);
-      wrongGuesses++;
-      if (hearts <= 0 || wrongGuesses >= WRONG_BEFORE_HELP) return explainAnswer(q, right);
-      $('hint').textContent = 'Nearly! You lost a heart. Try again.';
-      say('Nearly! Try again.');
-    };
-    box.appendChild(b);
+  box.className = q.answers.length > 3 ? 'many' : '';
+  // A wrong answer costs a heart, then you can try again
+  const wrong = () => {
+    hearts--;
+    updateHud();
+    beep(380, 280, 0.25, 'triangle', 0.1);
+    wrongGuesses++;
+    if (hearts <= 0 || wrongGuesses >= WRONG_BEFORE_HELP) return explainAnswer(q, right);
+    $('hint').textContent = 'Nearly! You lost a heart. Try again.';
+    say('Nearly! Try again.');
+  };
+  if (q.dictation) {
+    letterTiles(q.dictation, wrong);
+  } else {
+    for (const answer of shuffled(q.answers)) {
+      const b = document.createElement('button');
+      b.textContent = answer;
+      b.onclick = () => {
+        if (answer === right) return showPrize();
+        b.disabled = true;
+        wrong();
+      };
+      box.appendChild(b);
+    }
   }
   quizEl.classList.remove('hidden');
   beep(500, 900, 0.3, 'triangle', 0.1);
   say(spoken);
 }
+
+// Dictation: tap the word's letters (plus a few extras) into the boxes, then Check
+let typeLetter = null;   // lets the keyboard work the tiles too
+
+function letterTiles(word, wrong) {
+  const box = $('answers');
+  box.className = 'spell';
+  const slots = document.createElement('div');
+  const tiles = document.createElement('div');
+  const tools = document.createElement('div');
+  slots.className = 'slots';
+  tiles.className = 'tiles';
+  tools.className = 'tools';
+  const undo = document.createElement('button');
+  const check = document.createElement('button');
+  undo.className = 'undo';
+  check.className = 'check';
+  undo.textContent = '⌫ Undo';
+  check.textContent = '✓ Check';
+
+  const chosen = [];
+  const show = () => {
+    slots.innerHTML = [...word].map((_, i) => `<span>${chosen[i] ? chosen[i].textContent : ''}</span>`).join('');
+    undo.disabled = !chosen.length;
+    check.disabled = chosen.length < word.length;
+  };
+  const add = b => {
+    if (b.disabled || chosen.length >= word.length) return;
+    b.disabled = true;
+    chosen.push(b);
+    beep(600, 750, 0.08, 'triangle', 0.06);
+    say(b.textContent.toUpperCase());
+    show();
+  };
+  const back = () => {
+    const b = chosen.pop();
+    if (b) b.disabled = false;
+    show();
+  };
+  undo.onclick = back;
+  check.onclick = () => {
+    if (chosen.map(b => b.textContent).join('') === word) return showPrize();
+    while (chosen.length) back();
+    wrong();
+  };
+
+  const extras = shuffled([...'abcdefghijklmnopqrstuvwxyz'].filter(c => !word.includes(c)));
+  for (const letter of shuffled([...word, ...extras.slice(0, Math.max(3, 8 - word.length))])) {
+    const b = document.createElement('button');
+    b.textContent = letter;
+    b.onclick = () => add(b);
+    tiles.appendChild(b);
+  }
+  typeLetter = e => {
+    if (!tiles.isConnected) return;
+    const key = e.key.toLowerCase();
+    if (key === 'backspace') back();
+    else if (key === 'enter' && !check.disabled) check.onclick();
+    else {
+      const b = [...tiles.children].find(t => !t.disabled && t.textContent === key);
+      if (b) add(b);
+    }
+    e.preventDefault();
+  };
+  tools.append(undo, check);
+  box.append(slots, tiles, tools);
+  show();
+}
+window.addEventListener('keydown', e => { if (quizOpen && typeLetter) typeLetter(e); });
 
 // After lots of wrong guesses, show the answer and why. No prize, but no more hearts lost.
 function explainAnswer(q, right) {
@@ -524,7 +690,7 @@ function explainAnswer(q, right) {
   $('hint').textContent = q.why;
   const box = $('answers');
   box.innerHTML = '';
-  box.classList.remove('many');
+  box.className = '';
   const b = document.createElement('button');
   b.textContent = hearts > 0 || babies.length ? 'Keep swimming!' : 'See my score';
   b.onclick = () => {
@@ -556,7 +722,7 @@ function showPrize() {
   $('hear').classList.add('hidden');
   const box = $('answers');
   box.innerHTML = '';
-  box.classList.remove('many');
+  box.className = '';
   const b = document.createElement('button');
   b.textContent = 'Keep swimming!';
   b.onclick = () => {
