@@ -90,6 +90,14 @@ for boxes in range(2, 6):
     for each in [2, 5, 10]:
         lines.add(f'{boxes} nets of {each} is {boxes * each}. Count in {each}s.')
 
+# Dictation (same wording as dictation() in index.html)
+for word, sentence in re.findall(r"^\s*\['([a-z]+)', '(.+?)'\],$", html, re.M):
+    Word = word[0].upper() + word[1:]
+    lines.add(f'{Word}. {sentence} {Word}.')
+    lines.add(f"{Word} is spelled {', '.join(word)}.")
+for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+    lines.add(letter)
+
 # Praise
 lines.add('Nearly! Try again.')
 lines.add('A new baby shark has joined you!')
@@ -103,11 +111,19 @@ lines.add('Well done! You won rainbow power!')
 for prize in re.findall(r"\{ name: '(.+?)',", html):
     lines.add(f'Well done! You won {prize} and rainbow power!')
 
+def letters(text):
+    # Make sure single letters are said as letter names: "a" as "ay", not "uh"
+    letter = lambda c: f'[[char LTRL]]{c}[[char NORM]]'
+    if re.fullmatch(r'[A-Z]', text):
+        return letter(text)
+    return re.sub(r'is spelled ((?:[a-z], )*[a-z])\.$',
+                  lambda m: 'is spelled ' + ', '.join(letter(c) for c in m[1].split(', ')) + '.', text)
+
 def record(job):
     index, line, folder = job
     aiff = os.path.join(folder, f'{index}.aiff')
     m4a = os.path.join(folder, f'{index}.m4a')
-    subprocess.run(['say', '-v', VOICE, '-o', aiff, line], check=True)
+    subprocess.run(['say', '-v', VOICE, '-o', aiff, letters(line)], check=True)
     subprocess.run(['afconvert', aiff, m4a, '-f', 'm4af', '-d', 'aac@22050', '-b', '32000', '-c', '1'], check=True)
     with open(m4a, 'rb') as f:
         return line, base64.b64encode(f.read()).decode()
