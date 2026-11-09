@@ -1,6 +1,6 @@
 # Shark Snack
 
-A friendly shark game for young children. Catch fish, dodge jellyfish, answer bonus questions and win prizes. Level 7 brings bubble boosts and level 10 brings sharp teeth for biting jellyfish and tough fish. Reach level 20 to start raising an army of baby sharks, then grow all 8 to win.
+A friendly shark game for young children. Catch fish, dodge jellyfish, answer bonus questions and win prizes. An orca whale helps eat jellyfish on levels 1, 11 and 12. Level 7 brings bubble boosts and level 10 brings sharp teeth for biting jellyfish and tough fish. Reach level 20 to start raising an army of baby sharks, then grow all 8 to win.
 
 ## Play
 
