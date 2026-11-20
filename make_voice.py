@@ -10,7 +10,13 @@ import base64, json, os, re, subprocess, tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VOICE = 'Daniel'
+VOICE = 'Serena (Premium)'   # download it in System Settings > Accessibility > Spoken Content
+RATE = '140'                 # words per minute, a little slow for young children
+
+# The Mac quietly swaps in its default voice if this one is missing, so check first
+installed = subprocess.run(['say', '-v', '?'], capture_output=True, text=True).stdout
+if not re.search(rf'^{re.escape(VOICE)}  ', installed, re.M):
+    raise SystemExit(f'{VOICE} is not installed. Download it in System Settings > Accessibility > Spoken Content.')
 
 html = open(os.path.join(HERE, 'index.html'), encoding='utf-8').read()
 lines = set()
@@ -124,7 +130,7 @@ def record(job):
     index, line, folder = job
     aiff = os.path.join(folder, f'{index}.aiff')
     m4a = os.path.join(folder, f'{index}.m4a')
-    subprocess.run(['say', '-v', VOICE, '-o', aiff, letters(line)], check=True)
+    subprocess.run(['say', '-v', VOICE, '-r', RATE, '-o', aiff, letters(line)], check=True)
     subprocess.run(['afconvert', aiff, m4a, '-f', 'm4af', '-d', 'aac@22050', '-b', '32000', '-c', '1'], check=True)
     with open(m4a, 'rb') as f:
         return line, base64.b64encode(f.read()).decode()
